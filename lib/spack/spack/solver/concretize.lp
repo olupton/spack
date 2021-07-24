@@ -250,6 +250,7 @@ provider_weight(Package, 100)
 % These allow us to easily define conditional dependency and conflict rules
 % without enumerating all spec attributes every time.
 node(Package)                          :- attr("node", Package).
+hash(Package, Hash)                    :- attr("hash", Package, Hash).
 version(Package, Version)              :- attr("version", Package, Version).
 version_satisfies(Package, Constraint) :- attr("version_satisfies", Package, Constraint).
 node_platform(Package, Platform)       :- attr("node_platform", Package, Platform).
@@ -266,6 +267,7 @@ node_compiler_version_satisfies(Package, Compiler, Version)
   :- attr("node_compiler_version_satisfies", Package, Compiler, Version).
 
 attr("node", Package)                          :- node(Package).
+attr("hash", Package, Hash)                    :- hash(Package, Hash).
 attr("version", Package, Version)              :- version(Package, Version).
 attr("version_satisfies", Package, Constraint) :- version_satisfies(Package, Constraint).
 attr("node_platform", Package, Platform)       :- node_platform(Package, Platform).
@@ -705,6 +707,21 @@ no_flags(Package, FlagType)
 #defined node_flag/3.
 #defined node_flag_set/3.
 
+
+%-----------------------------------------------------------------------------
+% Installed packages
+%-----------------------------------------------------------------------------
+% the solver is free to choose at most one installed hash for each package
+{ hash(Package, Hash) : installed_hash(Package, Hash) } 1.
+
+% if a hash is selected, we impose all the constraints that implies
+impose(Hash) :- hash(Package, Hash).
+
+% if we haven't selected a hash for a package, we'll be building it
+build(Package) :- not hash(Package, _), node(Package).
+
+#defined installed_hash/2.
+
 %-----------------------------------------------------------------------------
 % How to optimize the spec (high to low priority)
 %-----------------------------------------------------------------------------
@@ -713,12 +730,17 @@ no_flags(Package, FlagType)
 %   2. a `#minimize{ 0@2 : #true }.` statement that ensures the criterion
 %      is displayed (clingo doesn't display sums over empty sets by default)
 
+% Try hard to reuse installed packages (i.e., minimize the number built)
+opt_criterion(17, "number of packages to build (vs. reuse)").
+#minimize { 0@17 : #true }.
+#minimize { 1@17,Package : build(Package) }.
+
 % Minimize the number of deprecated versions being used
 opt_criterion(16, "deprecated versions used").
 #minimize{ 0@16 : #true }.
 #minimize{ 1@16,Package : deprecated(Package, _)}.
 
-% The highest priority is to minimize the:
+% Minimize the:
 % 1. Version weight
 % 2. Number of variants with a non default value, if not set
 % for the root(Package)

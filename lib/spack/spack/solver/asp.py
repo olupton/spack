@@ -42,6 +42,7 @@ import spack.package
 import spack.package_prefs
 import spack.repo
 import spack.spec
+import spack.store
 import spack.util.timer
 import spack.variant
 import spack.version
@@ -704,17 +705,20 @@ class SpackSolverSetup(object):
             )
 
         if imposed_spec:
-            imposed_constraints = self.checked_spec_clauses(
-                imposed_spec, body=False, required_from=name)
-            for pred in imposed_constraints:
-                # imposed "node"-like conditions are no-ops
-                if pred.name in ("node", "virtual_node"):
-                    continue
-                self.gen.fact(
-                    fn.imposed_constraint(condition_id, pred.name, *pred.args)
-                )
+            self.impose(condition_id, imposed_spec, node=False, name=name)
 
         return condition_id
+
+    def impose(self, condition_id, imposed_spec, node=True, name=None):
+        imposed_constraints = self.checked_spec_clauses(
+            imposed_spec, body=False, required_from=name)
+        for pred in imposed_constraints:
+            # imposed "node"-like conditions are no-ops
+            if not node and pred.name in ("node", "virtual_node"):
+                continue
+            self.gen.fact(
+                fn.imposed_constraint(condition_id, pred.name, *pred.args)
+            )
 
     def package_provider_rules(self, pkg):
         for provider_name in sorted(set(s.name for s in pkg.provided.keys())):
@@ -1031,7 +1035,12 @@ class SpackSolverSetup(object):
         # add all clauses from dependencies
         if transitive:
             for dep in spec.traverse(root=False):
-                clauses.extend(self.spec_clauses(dep, body, transitive=False))
+                if spec.concrete:
+                    clauses.append(fn.hash(dep.name, dep.dag_hash()))
+                else:
+                    clauses.extend(
+                        self.spec_clauses(dep, body, transitive=False)
+                    )
 
         return clauses
 
@@ -1340,6 +1349,26 @@ class SpackSolverSetup(object):
         for pkg, variant, value in sorted(self.variant_values_from_specs):
             self.gen.fact(fn.variant_possible_value(pkg, variant, value))
 
+    def define_installed_packages(self, possible):
+        """Add facts about all specs already in the database.
+
+        Arguments:
+            possible (dict): result of Package.possible_dependencies() for
+                specs in this solve.
+        """
+        with spack.store.db.read_transaction():
+            for spec in spack.store.db.query(installed=True):
+                # tell the solver about any installed packages that could
+                # be dependencies (don't tell it about the others)
+                if spec.name in possible:
+                    # this indicates that there is a spec like this installed
+                    h = spec.dag_hash()
+                    self.gen.fact(fn.installed_hash(spec.name, h))
+
+                    # this describes what constraints it imposes on the solve
+                    self.impose(h, spec)
+                    self.gen.newline()
+
     def setup(self, driver, specs, tests=False, reuse=False):
         """Generate an ASP program with relevant constraints for specs.
 
@@ -1349,7 +1378,6 @@ class SpackSolverSetup(object):
 
         Arguments:
             specs (list): list of Specs to solve
-
         """
         self._condition_id_counter = itertools.count()
 
@@ -1436,6 +1464,10 @@ class SpackSolverSetup(object):
         self.gen.h1("Target Constraints")
         self.define_target_constraints()
 
+        if reuse:
+            self.gen.h1("Installed packages")
+            self.define_installed_packages(possible)
+
 
 class SpecBuilder(object):
     """Class with actions to rebuild a spec from ASP results."""
@@ -1448,6 +1480,14 @@ class SpecBuilder(object):
     def node(self, pkg):
         if pkg not in self._specs:
             self._specs[pkg] = spack.spec.Spec(pkg)
+
+    def hash(self, pkg, h):
+        if pkg not in self._specs:
+            self._specs[pkg] = spack.store.db.get_by_hash(h)[0]
+        else:
+            # ensure that if it's already there, it's correct
+            spec = self._specs[pkg]
+            assert spec.dag_hash() == h
 
     def _arch(self, pkg):
         arch = self._specs[pkg].architecture
@@ -1586,6 +1626,7 @@ class SpecBuilder(object):
         # them here so that directives that build objects (like node and
         # node_compiler) are called in the right order.
         function_tuples.sort(key=lambda f: {
+            "hash": -3,
             "node": -2,
             "node_compiler": -1,
         }.get(f[0], 0))
@@ -1606,6 +1647,12 @@ class SpecBuilder(object):
             # solving but don't construct anything
             pkg = args[0]
             if spack.repo.path.is_virtual(pkg):
+                continue
+
+            # if we've already gotten a concrete spec for this pkg,
+            # do not bother calling actions on it.
+            spec = self._specs.get(pkg)
+            if spec and spec.concrete:
                 continue
 
             action(*args)
