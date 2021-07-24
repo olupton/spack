@@ -697,7 +697,7 @@ class SpackSolverSetup(object):
         self.gen.fact(fn.condition(condition_id))
 
         # requirements trigger the condition
-        requirements = self.checked_spec_clauses(
+        requirements = self.spec_clauses(
             named_cond, body=True, required_from=name)
         for pred in requirements:
             self.gen.fact(
@@ -710,7 +710,7 @@ class SpackSolverSetup(object):
         return condition_id
 
     def impose(self, condition_id, imposed_spec, node=True, name=None):
-        imposed_constraints = self.checked_spec_clauses(
+        imposed_constraints = self.spec_clauses(
             imposed_spec, body=False, required_from=name)
         for pred in imposed_constraints:
             # imposed "node"-like conditions are no-ops
@@ -908,13 +908,13 @@ class SpackSolverSetup(object):
                     self.gen.fact(fn.compiler_version_flag(
                         compiler.name, compiler.version, name, flag))
 
-    def checked_spec_clauses(self, *args, **kwargs):
-        """Wrap a call to spec clauses into a try/except block that raise
-        a comprehensible error message in case of failure.
+    def spec_clauses(self, *args, **kwargs):
+        """Wrap a call to `_spec_clauses()` into a try/except block that
+        raises a comprehensible error message in case of failure.
         """
         requestor = kwargs.pop('required_from', None)
         try:
-            clauses = self.spec_clauses(*args, **kwargs)
+            clauses = self._spec_clauses(*args, **kwargs)
         except RuntimeError as exc:
             msg = str(exc)
             if requestor:
@@ -922,7 +922,7 @@ class SpackSolverSetup(object):
             raise RuntimeError(msg)
         return clauses
 
-    def spec_clauses(self, spec, body=False, transitive=True):
+    def _spec_clauses(self, spec, body=False, transitive=True):
         """Return a list of clauses for a spec mandates are true.
 
         Arguments:
@@ -1039,7 +1039,7 @@ class SpackSolverSetup(object):
                     clauses.append(fn.hash(dep.name, dep.dag_hash()))
                 else:
                     clauses.extend(
-                        self.spec_clauses(dep, body, transitive=False)
+                        self._spec_clauses(dep, body, transitive=False)
                     )
 
         return clauses
