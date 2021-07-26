@@ -1029,11 +1029,15 @@ class SpackSolverSetup(object):
 
         # dependencies
         if spec.concrete:
-            clauses.append(fn.concrete(spec.name))
-            # TODO: add concrete depends_on() facts for concrete dependencies
+            clauses.append(fn.hash(spec.name, spec.dag_hash()))
 
         # add all clauses from dependencies
         if transitive:
+            if spec.concrete:
+                for dep_name, dep in spec.dependencies_dict().items():
+                    for dtype in dep.deptypes:
+                        clauses.append(fn.depends_on(spec.name, dep_name, dtype))
+
             for dep in spec.traverse(root=False):
                 if spec.concrete:
                     clauses.append(fn.hash(dep.name, dep.dag_hash()))
@@ -1482,6 +1486,7 @@ class SpecBuilder(object):
             self._specs[pkg] = spack.spec.Spec(pkg)
 
     def hash(self, pkg, h):
+        print("hash(%s, %s)" % (pkg, h))
         if pkg not in self._specs:
             self._specs[pkg] = spack.store.db.get_by_hash(h)[0]
         else:

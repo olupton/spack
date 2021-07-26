@@ -27,6 +27,8 @@
 #show no_flags/2.
 #show external_spec_selected/2.
 
+#show build/1.
+
 % names of optimization criteria
 #show opt_criterion/2.
 

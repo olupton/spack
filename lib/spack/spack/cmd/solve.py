@@ -144,3 +144,5 @@ def solve(parser, args):
             else:
                 sys.stdout.write(
                     spec.tree(color=sys.stdout.isatty(), **kwargs))
+                print()
+                print("\n".join([d.name for d in spec.traverse()]))
