@@ -96,6 +96,7 @@ class SimModel(Package):
         with profiling_wrapper_on():
             link_flag += ' -L{0} -Wl,-rpath,{0}'.format(str(self.prefix.lib))
             which('nrnivmodl')('-incflags', include_flag,
+                               '-legacytransformations', 'cxx',
                                '-loadflags', link_flag,
                                mods_location)
 
