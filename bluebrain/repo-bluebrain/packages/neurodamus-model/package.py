@@ -287,7 +287,7 @@ if [ -n "{nrnivmodlcore_call}" ]; then
             export LD_LIBRARY_PATH=$libpath:\\$LD_LIBRARY_PATH"
 fi
 
-'{nrnivmodl}' -incflags '{incflags} '"$2" -legacytransformations cxx \
+'{nrnivmodl}' -incflags '{incflags} '"$2" -legacytransformations bbp,cxx \
     -loadflags '{loadflags} '"$extra_loadflags $3" "$1"
 
 # Final Cleanup
